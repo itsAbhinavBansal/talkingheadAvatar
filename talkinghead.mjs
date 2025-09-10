@@ -2612,7 +2612,7 @@ class TalkingHead {
     opt = opt || {};
     const isSsmlEnabled = opt.ssml !== false;
     const voiceModal = opt.voiceModal || '';
-    const data = opt.data || {};
+    const chunkInfo = opt.chunkInfo || {};
     // Classifiers
     const dividersSentence = /[!\.\?\n\p{Extended_Pictographic}]/ug;
     const dividersWord = /[ ]/ug;
@@ -2717,7 +2717,7 @@ class TalkingHead {
             if ( opt.ttsVoice ) o.pitch = opt.ttsPitch;
             if ( opt.ttsVolume ) o.volume = opt.ttsVolume;
           }
-          this.speechQueue.push({ ...o, isSsmlEnabled, voiceModal, data });
+          this.speechQueue.push({ ...o, isSsmlEnabled, voiceModal, chunkInfo });
 
           // Reset sentence and animation sequence
           ttsSentence = [];
@@ -2731,17 +2731,17 @@ class TalkingHead {
           let emoji = this.animEmojis[letters[i]];
           if ( emoji && emoji.link ) emoji = this.animEmojis[emoji.link];
           if ( emoji ) {
-            this.speechQueue.push({ emoji, isSsmlEnabled, voiceModal, data });
+            this.speechQueue.push({ emoji, isSsmlEnabled, voiceModal, chunkInfo });
           }
         }
 
-        this.speechQueue.push({ break: 100, isSsmlEnabled, voiceModal, data });
+        this.speechQueue.push({ break: 100, isSsmlEnabled, voiceModal, chunkInfo });
 
       }
 
     }
 
-    this.speechQueue.push({ break: 1000, isSsmlEnabled, voiceModal, data });
+    this.speechQueue.push({ break: 1000, isSsmlEnabled, voiceModal, chunkInfo });
 
     // Start speaking (if not already)
     this.startSpeaking();
@@ -3054,7 +3054,7 @@ class TalkingHead {
       const line = this.speechQueue.shift();
       const { isSsmlEnabled = true } = line;
       const voiceModal = line.voiceModal || '';
-      const data = line.data || {};
+      const chunkInfo = line.chunkInfo || {};
 
       if ( line.emoji ) {
 
@@ -3123,7 +3123,7 @@ class TalkingHead {
                 isSsmlEnabled: isSsmlEnabled,
                 voiceModal: voiceModal
               },
-              data: data,
+              chunkInfo: chunkInfo || {},
               audioConfig: {
                 audioEncoding: this.ttsAudioEncoding,
                 speakingRate: (line.rate || this.avatar.ttsRate || this.opt.ttsRate) + this.mood.speech.deltaRate,
