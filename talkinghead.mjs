@@ -2616,51 +2616,64 @@ class TalkingHead {
 
     // ✅ Special case: don't split if fromSelfKnowledge is true
     if (chunkInfo.fromSelfKnowledge) {
-      let markId = 0;
       const lipsyncLang = opt.lipsyncLang || this.avatar.lipsyncLang || this.opt.lipsyncLang;
+      let markId = 0;
+      const ttsSentence = [];
+      const lipsyncAnim = [];
 
-      // Full text as one sentence
-      const ttsSentence = [{
-        mark: markId,
-        word: this.lipsyncPreProcessText(s, lipsyncLang)
-      }];
+      // Split into words on whitespace (keeps punctuation attached to words, like your normal flow)
+      const words = String(s).split(/\s+/u).filter(Boolean);
 
-      // Subtitles
-      const lipsyncAnim = [{
-        mark: markId,
-        template: { name: 'subtitles' },
-        ts: [0],
-        vs: { subtitles: [s] }
-      }];
-
-      // Visemes
-      const val = this.lipsyncWordsToVisemes(s, lipsyncLang);
-      if (val && val.visemes && val.visemes.length) {
-        const d = val.times[val.visemes.length - 1] + val.durations[val.visemes.length - 1];
-        for (let j = 0; j < val.visemes.length; j++) {
-          lipsyncAnim.push({
-            mark: markId,
-            template: { name: 'viseme' },
-            ts: [
-              (val.times[j] - 0.6) / d,
-              (val.times[j] + 0.5) / d,
-              (val.times[j] + val.durations[j] + 0.5) / d
-            ],
-            vs: {
-              ['viseme_' + val.visemes[j]]: [
-                null,
-                (val.visemes[j] === 'PP' || val.visemes[j] === 'FF') ? 0.9 : 0.6,
-                0
-              ]
-            }
-          });
+      for (let w of words) {
+        // Pre-process word exactly like normal path
+        const processed = this.lipsyncPreProcessText(w, lipsyncLang);
+        if (!processed || !processed.length) {
+          markId++;
+          continue;
         }
+
+        // Add mark/word pair used by startSpeaking to build SSML (<mark/> tags)
+        ttsSentence.push({ mark: markId, word: processed });
+
+        // Add subtitle entry for this word (keeps subtitle behavior similar to normal flow)
+        lipsyncAnim.push({
+          mark: markId,
+          template: { name: 'subtitles' },
+          ts: [0],
+          vs: { subtitles: [w] }
+        });
+
+        // Generate visemes for this word the same way normal path does
+        const val = this.lipsyncWordsToVisemes(processed, lipsyncLang);
+        if (val && val.visemes && val.visemes.length) {
+          const d = val.times[val.visemes.length - 1] + val.durations[val.visemes.length - 1];
+          for (let j = 0; j < val.visemes.length; j++) {
+            lipsyncAnim.push({
+              mark: markId,
+              template: { name: 'viseme' },
+              ts: [
+                (val.times[j] - 0.6) / d,
+                (val.times[j] + 0.5) / d,
+                (val.times[j] + val.durations[j] + 0.5) / d
+              ],
+              vs: {
+                ['viseme_' + val.visemes[j]]: [
+                  null,
+                  (val.visemes[j] === 'PP' || val.visemes[j] === 'FF') ? 0.9 : 0.6,
+                  0
+                ]
+              }
+            });
+          }
+        }
+
+        markId++;
       }
 
-      // Push one single speech item
+      // Push one single speech item (whole text as many marks/words)
       this.speechQueue.push({
         anim: lipsyncAnim,
-        text: ttsSentence,
+        text: ttsSentence,              // array of { mark, word } -> will produce <mark/> tags
         isSsmlEnabled,
         voiceModal,
         chunkInfo: { ...chunkInfo, isLastChunk: true },
@@ -2673,7 +2686,10 @@ class TalkingHead {
         volume: opt.ttsVolume
       });
 
-      // Start speaking
+      // keep the same trailing break item so behavior matches the normal path
+      this.speechQueue.push({ break: 1000, isSsmlEnabled, voiceModal, chunkInfo: { ...chunkInfo } });
+
+      // start and return (skip original splitting loop)
       this.startSpeaking();
       return;
     }
