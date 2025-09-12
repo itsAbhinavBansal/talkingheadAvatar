@@ -2626,6 +2626,11 @@ class TalkingHead {
     let markId = 0; // SSML mark id
     let ttsSentence = []; // Text-to-speech sentence
     let lipsyncAnim = []; // Lip-sync animation sequence
+    
+    // For fromSelfKnowledge: accumulate all content
+    let allTtsSentences = [];
+    let allLipsyncAnims = [];
+    
     const letters = [...s];
     for( let i=0; i<letters.length; i++ ) {
       const isLast = i === (letters.length-1);
@@ -2685,7 +2690,6 @@ class TalkingHead {
           if ( val && val.visemes && val.visemes.length ) {
             const d = val.times[ val.visemes.length-1 ] + val.durations[ val.visemes.length-1 ];
             for( let j=0; j<val.visemes.length; j++ ) {
-              const o =
               lipsyncAnim.push( {
                 mark: markId,
                 template: { name: 'viseme' },
@@ -2706,11 +2710,11 @@ class TalkingHead {
         // Send sentence to Text-to-speech queue
         if (ttsSentence.length || (isLast && lipsyncAnim.length)) {
           const o = {
-            anim: lipsyncAnim
+            anim: [...lipsyncAnim] // Create a copy
           };
           if (onsubtitles) o.onSubtitles = onsubtitles;
           if (ttsSentence.length && !opt.avatarMute) {
-            o.text = ttsSentence;
+            o.text = [...ttsSentence]; // Create a copy
             if (opt.avatarMood) o.mood = opt.avatarMood;
             if (opt.ttsLang) o.lang = opt.ttsLang;
             if (opt.ttsVoice) o.voice = opt.ttsVoice;
@@ -2720,24 +2724,20 @@ class TalkingHead {
           }
 
           if (!chunkInfo.fromSelfKnowledge) {
+            // Normal mode: send immediately
             this.speechQueue.push({ ...o, isSsmlEnabled, voiceModal, chunkInfo });
-            ttsSentence = [];
-            textWord = '';
-            markId = 0;
-            lipsyncAnim = [];
-          } else if (isLast) {
-            // 🔹 fromSelfKnowledge: flush only once, at the very end
-            this.speechQueue.push({
-              ...o,
-              isSsmlEnabled,
-              voiceModal,
-              chunkInfo: { ...chunkInfo, isLastChunk: true }
-            });
-            ttsSentence = [];
-            textWord = '';
-            markId = 0;
-            lipsyncAnim = [];
+          } else {
+            // fromSelfKnowledge mode: accumulate
+            if (o.text && o.text.length) {
+              allTtsSentences.push(...o.text);
+            }
+            allLipsyncAnims.push(...o.anim);
           }
+
+          // Reset sentence and animation sequence
+          ttsSentence = [];
+          textWord = '';
+          lipsyncAnim = [];
         }
 
         // Send emoji, if the divider was a known emoji
@@ -2745,25 +2745,69 @@ class TalkingHead {
           let emoji = this.animEmojis[letters[i]];
           if (emoji && emoji.link) emoji = this.animEmojis[emoji.link];
           if (emoji) {
-            this.speechQueue.push({ emoji, isSsmlEnabled, voiceModal, chunkInfo });
+            if (!chunkInfo.fromSelfKnowledge) {
+              this.speechQueue.push({ emoji, isSsmlEnabled, voiceModal, chunkInfo });
+            }
           }
         }
 
-        this.speechQueue.push({ break: 100, isSsmlEnabled, voiceModal, chunkInfo });
+        if (!chunkInfo.fromSelfKnowledge) {
+          this.speechQueue.push({ break: 100, isSsmlEnabled, voiceModal, chunkInfo });
+        }
       }
-
     }
 
-    this.speechQueue.push({ break: 1000, isSsmlEnabled, voiceModal, chunkInfo });
-
-    // ✅ Mark the last real chunk with isLastChunk=true
-    for (let i = this.speechQueue.length - 1; i >= 0; i--) {
-      if (this.speechQueue[i].text || this.speechQueue[i].audio) {
-        this.speechQueue[i].chunkInfo = {
-          ...(this.speechQueue[i].chunkInfo || {}),
-          isLastChunk: true
+    // Handle fromSelfKnowledge: send everything as one chunk
+    if (chunkInfo.fromSelfKnowledge) {
+      if (allTtsSentences.length || allLipsyncAnims.length) {
+        // Re-index the marks for the combined content
+        const combinedAnims = [];
+        let currentMarkOffset = 0;
+        
+        allLipsyncAnims.forEach(anim => {
+          combinedAnims.push({
+            ...anim,
+            mark: anim.mark + currentMarkOffset
+          });
+        });
+        
+        const combinedContent = {
+          anim: combinedAnims,
+          isSsmlEnabled,
+          voiceModal,
+          chunkInfo: { ...chunkInfo, isLastChunk: true }
         };
-        break;
+        
+        if (onsubtitles) combinedContent.onSubtitles = onsubtitles;
+        if (allTtsSentences.length && !opt.avatarMute) {
+          // Re-index the marks for sentences too
+          combinedContent.text = allTtsSentences.map((sentence, index) => ({
+            ...sentence,
+            mark: index
+          }));
+          if (opt.avatarMood) combinedContent.mood = opt.avatarMood;
+          if (opt.ttsLang) combinedContent.lang = opt.ttsLang;
+          if (opt.ttsVoice) combinedContent.voice = opt.ttsVoice;
+          if (opt.ttsRate) combinedContent.rate = opt.ttsRate;
+          if (opt.ttsPitch) combinedContent.pitch = opt.ttsPitch;
+          if (opt.ttsVolume) combinedContent.volume = opt.ttsVolume;
+        }
+        
+        this.speechQueue.push(combinedContent);
+      }
+    } else {
+      // Normal mode: add final break
+      this.speechQueue.push({ break: 1000, isSsmlEnabled, voiceModal, chunkInfo });
+      
+      // Mark the last real chunk with isLastChunk=true
+      for (let i = this.speechQueue.length - 1; i >= 0; i--) {
+        if (this.speechQueue[i].text || this.speechQueue[i].audio) {
+          this.speechQueue[i].chunkInfo = {
+            ...(this.speechQueue[i].chunkInfo || {}),
+            isLastChunk: true
+          };
+          break;
+        }
       }
     }
 
