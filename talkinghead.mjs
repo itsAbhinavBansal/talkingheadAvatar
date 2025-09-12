@@ -2613,7 +2613,6 @@ class TalkingHead {
     const isSsmlEnabled = opt.ssml !== false;
     const voiceModal = opt.voiceModal || '';
     const chunkInfo = opt.chunkInfo || {};
-
     // Classifiers
     const dividersSentence = /[!\.\?\n\p{Extended_Pictographic}]/ug;
     const dividersWord = /[ ]/ug;
@@ -2626,11 +2625,6 @@ class TalkingHead {
     let markId = 0; // SSML mark id
     let ttsSentence = []; // Text-to-speech sentence
     let lipsyncAnim = []; // Lip-sync animation sequence
-    
-    // For fromSelfKnowledge: accumulate all content
-    let allTtsSentences = [];
-    let allLipsyncAnims = [];
-    
     const letters = [...s];
     for( let i=0; i<letters.length; i++ ) {
       const isLast = i === (letters.length-1);
@@ -2641,6 +2635,11 @@ class TalkingHead {
 
       // Exception for end-of-sentence is repeated dividers
       if ( isEndOfSentence && !isLast && !isEmoji && letters[i+1].match(dividersSentence) ) {
+        isEndOfSentence = false;
+      }
+
+      // If fromSelfKnowledge is true, don't treat as end of sentence unless it's the last character
+      if ( chunkInfo.fromSelfKnowledge && isEndOfSentence && !isLast ) {
         isEndOfSentence = false;
       }
 
@@ -2685,17 +2684,17 @@ class TalkingHead {
 
         // Push visemes to animation queue
         if ( textWord.length ) {
-          const isSelf = chunkInfo.fromSelfKnowledge;
           const val = this.lipsyncWordsToVisemes(textWord, lipsyncLang);
           if ( val && val.visemes && val.visemes.length ) {
             const d = val.times[ val.visemes.length-1 ] + val.durations[ val.visemes.length-1 ];
             for( let j=0; j<val.visemes.length; j++ ) {
+              const o =
               lipsyncAnim.push( {
                 mark: markId,
                 template: { name: 'viseme' },
                 ts: [ (val.times[j] - 0.6) / d, (val.times[j] + 0.5) / d, (val.times[j] + val.durations[j] + 0.5) / d ],
                 vs: {
-                  ['viseme_'+val.visemes[j]]: [null,(val.visemes[j] === 'PP' || val.visemes[j] === 'FF') ? (isSelf ? 1.2 : 0.9) : (isSelf ? 1.0 : 0.6), 0]
+                  ['viseme_'+val.visemes[j]]: [null,(val.visemes[j] === 'PP' || val.visemes[j] === 'FF') ? 0.9 : 0.6,0]
                 }
               });
             }
@@ -2706,108 +2705,56 @@ class TalkingHead {
       }
 
       // Process sentences
-      if (isEndOfSentence || isLast) {
-        // Send sentence to Text-to-speech queue
-        if (ttsSentence.length || (isLast && lipsyncAnim.length)) {
-          const o = {
-            anim: [...lipsyncAnim] // Create a copy
-          };
-          if (onsubtitles) o.onSubtitles = onsubtitles;
-          if (ttsSentence.length && !opt.avatarMute) {
-            o.text = [...ttsSentence]; // Create a copy
-            if (opt.avatarMood) o.mood = opt.avatarMood;
-            if (opt.ttsLang) o.lang = opt.ttsLang;
-            if (opt.ttsVoice) o.voice = opt.ttsVoice;
-            if (opt.ttsRate) o.rate = opt.ttsRate;
-            if (opt.ttsPitch) o.pitch = opt.ttsPitch;
-            if (opt.ttsVolume) o.volume = opt.ttsVolume;
-          }
+      if ( isEndOfSentence || isLast ) {
 
-          if (!chunkInfo.fromSelfKnowledge) {
-            // Normal mode: send immediately
-            this.speechQueue.push({ ...o, isSsmlEnabled, voiceModal, chunkInfo });
-          } else {
-            // fromSelfKnowledge mode: accumulate
-            if (o.text && o.text.length) {
-              allTtsSentences.push(...o.text);
-            }
-            allLipsyncAnims.push(...o.anim);
+        // Send sentence to Text-to-speech queue
+        if ( ttsSentence.length || (isLast && lipsyncAnim.length) ) {
+          const o = {
+            anim: lipsyncAnim
+          };
+          if ( onsubtitles ) o.onSubtitles = onsubtitles;
+          if ( ttsSentence.length && !opt.avatarMute ) {
+            o.text = ttsSentence;
+            if ( opt.avatarMood ) o.mood = opt.avatarMood;
+            if ( opt.ttsLang ) o.lang = opt.ttsLang;
+            if ( opt.ttsVoice ) o.voice = opt.ttsVoice;
+            if ( opt.ttsRate ) o.rate = opt.ttsRate;
+            if ( opt.ttsVoice ) o.pitch = opt.ttsPitch;
+            if ( opt.ttsVolume ) o.volume = opt.ttsVolume;
           }
+          this.speechQueue.push({ ...o, isSsmlEnabled, voiceModal, chunkInfo });
 
           // Reset sentence and animation sequence
           ttsSentence = [];
           textWord = '';
+          markId = 0;
           lipsyncAnim = [];
         }
 
         // Send emoji, if the divider was a known emoji
-        if (isEmoji) {
+        if ( isEmoji ) {
           let emoji = this.animEmojis[letters[i]];
-          if (emoji && emoji.link) emoji = this.animEmojis[emoji.link];
-          if (emoji) {
-            if (!chunkInfo.fromSelfKnowledge) {
-              this.speechQueue.push({ emoji, isSsmlEnabled, voiceModal, chunkInfo });
-            }
+          if ( emoji && emoji.link ) emoji = this.animEmojis[emoji.link];
+          if ( emoji ) {
+            this.speechQueue.push({ emoji, isSsmlEnabled, voiceModal, chunkInfo });
           }
         }
 
-        if (!chunkInfo.fromSelfKnowledge) {
-          this.speechQueue.push({ break: 100, isSsmlEnabled, voiceModal, chunkInfo });
-        }
+        this.speechQueue.push({ break: 100, isSsmlEnabled, voiceModal, chunkInfo });
+
       }
+
     }
 
-    // Handle fromSelfKnowledge: send everything as one chunk
-    if (chunkInfo.fromSelfKnowledge) {
-      if (allTtsSentences.length || allLipsyncAnims.length) {
-        // Re-index the marks for the combined content
-        const combinedAnims = [];
-        let currentMarkOffset = 0;
-        
-        allLipsyncAnims.forEach(anim => {
-          combinedAnims.push({
-            ...anim,
-            mark: anim.mark + currentMarkOffset
-          });
-        });
-        
-        const combinedContent = {
-          anim: combinedAnims,
-          isSsmlEnabled,
-          voiceModal,
-          chunkInfo: { ...chunkInfo, isLastChunk: true }
+    this.speechQueue.push({ break: 1000, isSsmlEnabled, voiceModal, chunkInfo });
+
+    for (let i = this.speechQueue.length - 1; i >= 0; i--) {
+      if (this.speechQueue[i].text || this.speechQueue[i].audio) {
+        this.speechQueue[i].chunkInfo = {
+          ...(this.speechQueue[i].chunkInfo || {}),
+          isLastChunk: true
         };
-        
-        if (onsubtitles) combinedContent.onSubtitles = onsubtitles;
-        if (allTtsSentences.length && !opt.avatarMute) {
-          // Re-index the marks for sentences too
-          combinedContent.text = allTtsSentences.map((sentence, index) => ({
-            ...sentence,
-            mark: index
-          }));
-          if (opt.avatarMood) combinedContent.mood = opt.avatarMood;
-          if (opt.ttsLang) combinedContent.lang = opt.ttsLang;
-          if (opt.ttsVoice) combinedContent.voice = opt.ttsVoice;
-          if (opt.ttsRate) combinedContent.rate = opt.ttsRate;
-          if (opt.ttsPitch) combinedContent.pitch = opt.ttsPitch;
-          if (opt.ttsVolume) combinedContent.volume = opt.ttsVolume;
-        }
-        
-        this.speechQueue.push(combinedContent);
-      }
-    } else {
-      // Normal mode: add final break
-      this.speechQueue.push({ break: 1000, isSsmlEnabled, voiceModal, chunkInfo });
-      
-      // Mark the last real chunk with isLastChunk=true
-      for (let i = this.speechQueue.length - 1; i >= 0; i--) {
-        if (this.speechQueue[i].text || this.speechQueue[i].audio) {
-          this.speechQueue[i].chunkInfo = {
-            ...(this.speechQueue[i].chunkInfo || {}),
-            isLastChunk: true
-          };
-          break;
-        }
+        break;
       }
     }
 
