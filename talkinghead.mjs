@@ -2680,6 +2680,7 @@ class TalkingHead {
 
         // Push visemes to animation queue
         if ( textWord.length ) {
+          const isSelf = chunkInfo.fromSelfKnowledge;
           const val = this.lipsyncWordsToVisemes(textWord, lipsyncLang);
           if ( val && val.visemes && val.visemes.length ) {
             const d = val.times[ val.visemes.length-1 ] + val.durations[ val.visemes.length-1 ];
@@ -2690,7 +2691,7 @@ class TalkingHead {
                 template: { name: 'viseme' },
                 ts: [ (val.times[j] - 0.6) / d, (val.times[j] + 0.5) / d, (val.times[j] + val.durations[j] + 0.5) / d ],
                 vs: {
-                  ['viseme_'+val.visemes[j]]: [null,(val.visemes[j] === 'PP' || val.visemes[j] === 'FF') ? 0.9 : 0.6,0]
+                  ['viseme_'+val.visemes[j]]: [null,(val.visemes[j] === 'PP' || val.visemes[j] === 'FF') ? (isSelf ? 1.2 : 0.9) : (isSelf ? 1.0 : 0.6), 0]
                 }
               });
             }
