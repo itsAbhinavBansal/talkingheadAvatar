@@ -2613,6 +2613,70 @@ class TalkingHead {
     const isSsmlEnabled = opt.ssml !== false;
     const voiceModal = opt.voiceModal || '';
     const chunkInfo = opt.chunkInfo || {};
+
+    // ✅ Special case: don't split if fromSelfKnowledge is true
+    if (chunkInfo.fromSelfKnowledge) {
+      let markId = 0;
+      const lipsyncLang = opt.lipsyncLang || this.avatar.lipsyncLang || this.opt.lipsyncLang;
+
+      // Full text as one sentence
+      const ttsSentence = [{
+        mark: markId,
+        word: this.lipsyncPreProcessText(s, lipsyncLang)
+      }];
+
+      // Subtitles
+      const lipsyncAnim = [{
+        mark: markId,
+        template: { name: 'subtitles' },
+        ts: [0],
+        vs: { subtitles: [s] }
+      }];
+
+      // Visemes
+      const val = this.lipsyncWordsToVisemes(s, lipsyncLang);
+      if (val && val.visemes && val.visemes.length) {
+        const d = val.times[val.visemes.length - 1] + val.durations[val.visemes.length - 1];
+        for (let j = 0; j < val.visemes.length; j++) {
+          lipsyncAnim.push({
+            mark: markId,
+            template: { name: 'viseme' },
+            ts: [
+              (val.times[j] - 0.6) / d,
+              (val.times[j] + 0.5) / d,
+              (val.times[j] + val.durations[j] + 0.5) / d
+            ],
+            vs: {
+              ['viseme_' + val.visemes[j]]: [
+                null,
+                (val.visemes[j] === 'PP' || val.visemes[j] === 'FF') ? 0.9 : 0.6,
+                0
+              ]
+            }
+          });
+        }
+      }
+
+      // Push one single speech item
+      this.speechQueue.push({
+        anim: lipsyncAnim,
+        text: ttsSentence,
+        isSsmlEnabled,
+        voiceModal,
+        chunkInfo: { ...chunkInfo, isLastChunk: true },
+        onSubtitles: onsubtitles,
+        mood: opt.avatarMood,
+        lang: opt.ttsLang,
+        voice: opt.ttsVoice,
+        rate: opt.ttsRate,
+        pitch: opt.ttsPitch,
+        volume: opt.ttsVolume
+      });
+
+      // Start speaking
+      this.startSpeaking();
+      return;
+    }
     // Classifiers
     const dividersSentence = /[!\.\?\n\p{Extended_Pictographic}]/ug;
     const dividersWord = /[ ]/ug;
@@ -2742,6 +2806,17 @@ class TalkingHead {
     }
 
     this.speechQueue.push({ break: 1000, isSsmlEnabled, voiceModal, chunkInfo });
+
+    // ✅ Mark the last real chunk with isLastChunk=true
+    for (let i = this.speechQueue.length - 1; i >= 0; i--) {
+      if (this.speechQueue[i].text || this.speechQueue[i].audio) {
+        this.speechQueue[i].chunkInfo = {
+          ...(this.speechQueue[i].chunkInfo || {}),
+          isLastChunk: true
+        };
+        break;
+      }
+    }
 
     // Start speaking (if not already)
     this.startSpeaking();
