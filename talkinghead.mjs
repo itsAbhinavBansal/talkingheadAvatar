@@ -2614,85 +2614,6 @@ class TalkingHead {
     const voiceModal = opt.voiceModal || '';
     const chunkInfo = opt.chunkInfo || {};
 
-    // ✅ Special case: don't split if fromSelfKnowledge is true
-    if (chunkInfo.fromSelfKnowledge) {
-      const lipsyncLang = opt.lipsyncLang || this.avatar.lipsyncLang || this.opt.lipsyncLang;
-      let markId = 0;
-      const ttsSentence = [];
-      const lipsyncAnim = [];
-
-      // Split into words on whitespace (keeps punctuation attached to words, like your normal flow)
-      const words = String(s).split(/\s+/u).filter(Boolean);
-
-      for (let w of words) {
-        // Pre-process word exactly like normal path
-        const processed = this.lipsyncPreProcessText(w, lipsyncLang);
-        if (!processed || !processed.length) {
-          markId++;
-          continue;
-        }
-
-        // Add mark/word pair used by startSpeaking to build SSML (<mark/> tags)
-        ttsSentence.push({ mark: markId, word: processed });
-
-        // Add subtitle entry for this word (keeps subtitle behavior similar to normal flow)
-        lipsyncAnim.push({
-          mark: markId,
-          template: { name: 'subtitles' },
-          ts: [0],
-          vs: { subtitles: [w] }
-        });
-
-        // Generate visemes for this word the same way normal path does
-        const val = this.lipsyncWordsToVisemes(processed, lipsyncLang);
-        if (val && val.visemes && val.visemes.length) {
-          const d = val.times[val.visemes.length - 1] + val.durations[val.visemes.length - 1];
-          for (let j = 0; j < val.visemes.length; j++) {
-            lipsyncAnim.push({
-              mark: markId,
-              template: { name: 'viseme' },
-              ts: [
-                (val.times[j] - 0.6) / d,
-                (val.times[j] + 0.5) / d,
-                (val.times[j] + val.durations[j] + 0.5) / d
-              ],
-              vs: {
-                ['viseme_' + val.visemes[j]]: [
-                  null,
-                  (val.visemes[j] === 'PP' || val.visemes[j] === 'FF') ? 0.9 : 0.6,
-                  0
-                ]
-              }
-            });
-          }
-        }
-
-        markId++;
-      }
-
-      // Push one single speech item (whole text as many marks/words)
-      this.speechQueue.push({
-        anim: lipsyncAnim,
-        text: ttsSentence,              // array of { mark, word } -> will produce <mark/> tags
-        isSsmlEnabled,
-        voiceModal,
-        chunkInfo: { ...chunkInfo, isLastChunk: true },
-        onSubtitles: onsubtitles,
-        mood: opt.avatarMood,
-        lang: opt.ttsLang,
-        voice: opt.ttsVoice,
-        rate: opt.ttsRate,
-        pitch: opt.ttsPitch,
-        volume: opt.ttsVolume
-      });
-
-      // keep the same trailing break item so behavior matches the normal path
-      this.speechQueue.push({ break: 1000, isSsmlEnabled, voiceModal, chunkInfo: { ...chunkInfo } });
-
-      // start and return (skip original splitting loop)
-      this.startSpeaking();
-      return;
-    }
     // Classifiers
     const dividersSentence = /[!\.\?\n\p{Extended_Pictographic}]/ug;
     const dividersWord = /[ ]/ug;
@@ -2780,43 +2701,54 @@ class TalkingHead {
       }
 
       // Process sentences
-      if ( isEndOfSentence || isLast ) {
-
+      if (isEndOfSentence || isLast) {
         // Send sentence to Text-to-speech queue
-        if ( ttsSentence.length || (isLast && lipsyncAnim.length) ) {
+        if (ttsSentence.length || (isLast && lipsyncAnim.length)) {
           const o = {
             anim: lipsyncAnim
           };
-          if ( onsubtitles ) o.onSubtitles = onsubtitles;
-          if ( ttsSentence.length && !opt.avatarMute ) {
+          if (onsubtitles) o.onSubtitles = onsubtitles;
+          if (ttsSentence.length && !opt.avatarMute) {
             o.text = ttsSentence;
-            if ( opt.avatarMood ) o.mood = opt.avatarMood;
-            if ( opt.ttsLang ) o.lang = opt.ttsLang;
-            if ( opt.ttsVoice ) o.voice = opt.ttsVoice;
-            if ( opt.ttsRate ) o.rate = opt.ttsRate;
-            if ( opt.ttsVoice ) o.pitch = opt.ttsPitch;
-            if ( opt.ttsVolume ) o.volume = opt.ttsVolume;
+            if (opt.avatarMood) o.mood = opt.avatarMood;
+            if (opt.ttsLang) o.lang = opt.ttsLang;
+            if (opt.ttsVoice) o.voice = opt.ttsVoice;
+            if (opt.ttsRate) o.rate = opt.ttsRate;
+            if (opt.ttsPitch) o.pitch = opt.ttsPitch;
+            if (opt.ttsVolume) o.volume = opt.ttsVolume;
           }
-          this.speechQueue.push({ ...o, isSsmlEnabled, voiceModal, chunkInfo });
 
-          // Reset sentence and animation sequence
-          ttsSentence = [];
-          textWord = '';
-          markId = 0;
-          lipsyncAnim = [];
+          if (!chunkInfo.fromSelfKnowledge) {
+            this.speechQueue.push({ ...o, isSsmlEnabled, voiceModal, chunkInfo });
+            ttsSentence = [];
+            textWord = '';
+            markId = 0;
+            lipsyncAnim = [];
+          } else if (isLast) {
+            // 🔹 fromSelfKnowledge: flush only once, at the very end
+            this.speechQueue.push({
+              ...o,
+              isSsmlEnabled,
+              voiceModal,
+              chunkInfo: { ...chunkInfo, isLastChunk: true }
+            });
+            ttsSentence = [];
+            textWord = '';
+            markId = 0;
+            lipsyncAnim = [];
+          }
         }
 
         // Send emoji, if the divider was a known emoji
-        if ( isEmoji ) {
+        if (isEmoji) {
           let emoji = this.animEmojis[letters[i]];
-          if ( emoji && emoji.link ) emoji = this.animEmojis[emoji.link];
-          if ( emoji ) {
+          if (emoji && emoji.link) emoji = this.animEmojis[emoji.link];
+          if (emoji) {
             this.speechQueue.push({ emoji, isSsmlEnabled, voiceModal, chunkInfo });
           }
         }
 
         this.speechQueue.push({ break: 100, isSsmlEnabled, voiceModal, chunkInfo });
-
       }
 
     }
