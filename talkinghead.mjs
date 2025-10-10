@@ -199,13 +199,6 @@ class TalkingHead {
         }
       },
 
-      'hip':{
-        standing: true,
-        props: {
-          'Hips.position':{x:0,y:1,z:0}, 'Hips.rotation':{x:-0.036,y:0.09,z:0.135}, 'Spine.rotation':{x:0.076,y:-0.035,z:0.01}, 'Spine1.rotation':{x:-0.096,y:0.013,z:-0.094}, 'Spine2.rotation':{x:-0.014,y:0.002,z:-0.097}, 'Neck.rotation':{x:0.034,y:-0.051,z:-0.075}, 'Head.rotation':{x:0.298,y:-0.1,z:0.154}, 'LeftShoulder.rotation':{x:1.694,y:0.011,z:-1.68}, 'LeftArm.rotation':{x:1.343,y:0.177,z:-0.153}, 'LeftForeArm.rotation':{x:-0.049,y:0.134,z:0.351}, 'LeftHand.rotation':{x:0.057,y:-0.189,z:-0.026}, 'LeftHandThumb1.rotation':{x:0.368,y:-0.066,z:0.438}, 'LeftHandThumb2.rotation':{x:-0.156,y:0.029,z:-0.369}, 'LeftHandThumb3.rotation':{x:0.034,y:-0.009,z:0.016}, 'LeftHandIndex1.rotation':{x:0.157,y:-0.002,z:-0.171}, 'LeftHandIndex2.rotation':{x:0.099,y:0,z:0}, 'LeftHandIndex3.rotation':{x:0.1,y:0,z:0}, 'LeftHandMiddle1.rotation':{x:0.222,y:-0.019,z:-0.16}, 'LeftHandMiddle2.rotation':{x:0.142,y:0,z:0}, 'LeftHandMiddle3.rotation':{x:0.141,y:0,z:0}, 'LeftHandRing1.rotation':{x:0.333,y:-0.039,z:-0.174}, 'LeftHandRing2.rotation':{x:0.214,y:0,z:0}, 'LeftHandRing3.rotation':{x:0.213,y:0,z:0}, 'LeftHandPinky1.rotation':{x:0.483,y:-0.069,z:-0.189}, 'LeftHandPinky2.rotation':{x:0.312,y:0,z:0}, 'LeftHandPinky3.rotation':{x:0.309,y:0,z:0}, 'RightShoulder.rotation':{x:1.597,y:0.012,z:1.816}, 'RightArm.rotation':{x:0.618,y:-1.274,z:-0.266}, 'RightForeArm.rotation':{x:-0.395,y:-0.097,z:-1.342}, 'RightHand.rotation':{x:-0.816,y:-0.057,z:-0.976}, 'RightHandThumb1.rotation':{x:0.42,y:0.23,z:-1.172}, 'RightHandThumb2.rotation':{x:-0.027,y:0.361,z:0.122}, 'RightHandThumb3.rotation':{x:0.076,y:0.125,z:-0.371}, 'RightHandIndex1.rotation':{x:-0.158,y:-0.045,z:0.033}, 'RightHandIndex2.rotation':{x:0.391,y:0.051,z:0.025}, 'RightHandIndex3.rotation':{x:0.317,y:0.058,z:0.07}, 'RightHandMiddle1.rotation':{x:0.486,y:0.066,z:0.014}, 'RightHandMiddle2.rotation':{x:0.718,y:0.055,z:0.07}, 'RightHandMiddle3.rotation':{x:0.453,y:0.019,z:0.013}, 'RightHandRing1.rotation':{x:0.591,y:0.241,z:0.11}, 'RightHandRing2.rotation':{x:1.014,y:0.023,z:0.097}, 'RightHandRing3.rotation':{x:0.708,y:0.008,z:0.066}, 'RightHandPinky1.rotation':{x:1.02,y:0.305,z:0.051}, 'RightHandPinky2.rotation':{x:1.187,y:-0.028,z:0.191}, 'RightHandPinky3.rotation':{x:0.872,y:-0.031,z:0.121}, 'LeftUpLeg.rotation':{x:-0.095,y:-0.058,z:-3.338}, 'LeftLeg.rotation':{x:-0.366,y:0.287,z:-0.021}, 'LeftFoot.rotation':{x:1.131,y:0.21,z:0.176}, 'LeftToeBase.rotation':{x:0.739,y:-0.068,z:-0.001}, 'RightUpLeg.rotation':{x:-0.502,y:0.362,z:3.153}, 'RightLeg.rotation':{x:-1.002,y:0.109,z:0.008}, 'RightFoot.rotation':{x:0.626,y:-0.097,z:-0.194}, 'RightToeBase.rotation':{x:1.33,y:0.288,z:-0.078}
-        }
-      },
-
       'turn':{
         standing: true,
         props: {
@@ -410,9 +403,6 @@ class TalkingHead {
           { name: 'breathing', delay: 1500, dt: [ 1200,500,1000 ], vs: { chestInhale: [0.5,0.5,0] } },
           { name: 'pose', alt: [
             { p: 0.5, delay: [5000,30000], vs: { pose: ['side'] } },
-            { p: 0.3, delay: [5000,30000], vs: { pose: ['hip'] },
-              'M': { delay: [5000,30000], vs: { pose: ['wide'] } }
-            },
             { delay: [5000,30000], vs: { pose: ['straight'] } }
           ]},
           { name: 'head',
@@ -434,9 +424,6 @@ class TalkingHead {
             idle: {
               alt: [
                 { p: 0.6, delay: [5000,30000], vs: { pose: ['side'] } },
-                { p: 0.2, delay: [5000,30000], vs: { pose: ['hip'] },
-                  'M': { delay: [5000,30000], vs: { pose: ['side'] } }
-                },
                 { p: 0.1, delay: [5000,30000], vs: { pose: ['straight'] } },
                 { delay: [5000,10000], vs: { pose: ['wide'] } },
                 { delay: [1000,3000], vs: { pose: ['turn'] } },
@@ -445,10 +432,7 @@ class TalkingHead {
             speaking: {
               alt: [
                 { p: 0.4, delay: [5000,30000], vs: { pose: ['side'] } },
-                { p: 0.4, delay: [5000,30000], vs: { pose: ['straight'] } },
-                { delay: [5000,20000], vs: { pose: ['hip'] },
-                  'M': { delay: [5000,30000], vs: { pose: ['wide'] } }
-                },
+                { p: 0.4, delay: [5000,30000], vs: { pose: ['straight'] } }
               ]
             }
           },
@@ -469,10 +453,7 @@ class TalkingHead {
           { name: 'breathing', delay: 500, dt: [ 1000,500,1000 ], vs: { chestInhale: [0.7,0.7,0] } },
           { name: 'pose', alt: [
             { p: 0.4, delay: [5000,30000], vs: { pose: ['side'] } },
-            { p: 0.4, delay: [5000,30000], vs: { pose: ['straight'] } },
-            { p: 0.2, delay: [5000,30000], vs: { pose: ['hip'] },
-              'M': { delay: [5000,30000], vs: { pose: ['wide'] } }
-            },
+            { p: 0.4, delay: [5000,30000], vs: { pose: ['straight'] } }
           ]},
           { name: 'head',
             idle: { delay: [100,500], dt: [ [200,5000] ], vs: { bodyRotateX: [[-0.04,0.10]], bodyRotateY: [[-0.2,0.2]], bodyRotateZ: [[-0.08,0.08]] } },
@@ -555,9 +536,6 @@ class TalkingHead {
           { name: 'pose', alt: [
             { p: 0.4, delay: [5000,30000], vs: { pose: ['side'] } },
             { p: 0.2, delay: [5000,30000], vs: { pose: ['straight'] } },
-            { p: 0.2, delay: [5000,30000], vs: { pose: ['hip'] },
-              'M': { delay: [5000,30000], vs: { pose: ['side'] } }
-            },
             { delay: [5000,10000], vs: { pose: ['side'] },
               full: { delay: [5000,10000], vs: { pose: ['kneel'] } }
             },
