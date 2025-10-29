@@ -3050,24 +3050,15 @@ class TalkingHead {
       const chunkInfo = line.chunkInfo || {};
 
       if ( line.emoji ) {
-
-        // Look at the camera
         this.lookAtCamera(500);
-
-        // Only emoji
         let duration = line.emoji.dt.reduce((a,b) => a+b,0);
         this.animQueue.push( this.animFactory( line.emoji ) );
         setTimeout( this.startSpeaking.bind(this), duration, true );
       } else if ( line.break ) {
-        // Break
         setTimeout( this.startSpeaking.bind(this), line.break, true );
       } else if ( line.audio ) {
-
-        // Look at the camera
         this.lookAtCamera(500);
         this.speakWithHands();
-
-        // Make a playlist
         this.audioPlaylist.push({ anim: line.anim, audio: line.audio });
         this.onSubtitles = line.onSubtitles || null;
         this.resetLips();
@@ -3086,25 +3077,11 @@ class TalkingHead {
             // Build plain sentence text first
             let rawSentence = line.text.map(x => x.word).join(' ');
 
-            // 🔧 Add SSML tags for better number pronunciation
+            // 🔧 Preprocess numbers for SSML
             rawSentence = this.preprocessNumbersForSSML(rawSentence);
 
-            // Build SSML structure with marks and escapes
-            let ssml = "<speak>";
-            line.text.forEach((x, i) => {
-              if (i > 0) ssml += " <mark name='" + x.mark + "'/>";
-              let safeWord = x.word
-                .replaceAll('&','&amp;')
-                .replaceAll('<','&lt;')
-                .replaceAll('>','&gt;')
-                .replaceAll('"','&quot;')
-                .replaceAll('\'','&apos;')
-                .replace(/^\p{Dash_Punctuation}$/ug,'<break time="750ms"/>');
-
-              ssml += safeWord + " ";
-            });
-            ssml = `<speak>${rawSentence}</speak>`;
-            inputData = { ssml };
+            // Now wrap in <speak> tags - DON'T rebuild with marks, just use the preprocessed text
+            inputData = { ssml: `<speak>${rawSentence}</speak>` };
           }
 
           const o = {
@@ -3143,17 +3120,14 @@ class TalkingHead {
             const audio = await this.audioCtx.decodeAudioData(buf);
             this.speakWithHands();
 
-            // 👇 Reuse old timing logic only if SSML mode
             if (isSsmlEnabled) {
-              // ✅ Full lipsync logic using SSML + marks + timepoints
-
               // Workaround for Google TTS not providing all timepoints
               const times = [0];
               let markIndex = 0;
               line.text.forEach((x, i) => {
                 if (i > 0) {
                   let ms = times[times.length - 1];
-                  if (data.timepoints[markIndex]) {
+                  if (data.timepoints && data.timepoints[markIndex]) {
                     ms = data.timepoints[markIndex].timeSeconds * 1000;
                     if (data.timepoints[markIndex].markName === "" + x.mark) {
                       markIndex++;
@@ -3168,7 +3142,7 @@ class TalkingHead {
               times.forEach((x, i) => {
                 if (i > 0) {
                   let prevDuration = x - times[i - 1];
-                if ( prevDuration > 150 ) prevDuration -= 150; // Trim out leading space
+                  if ( prevDuration > 150 ) prevDuration -= 150;
                   timepoints[i - 1].duration = prevDuration;
                   timepoints.push({ mark: i, time: x });
                 }
@@ -3187,7 +3161,6 @@ class TalkingHead {
                 }
               });
 
-              // Add to the playlist
               this.audioPlaylist.push({ anim: line.anim, audio: audio });
               this.onSubtitles = line.onSubtitles || null;
               this.resetLips();
@@ -3195,14 +3168,12 @@ class TalkingHead {
               this.playAudio();
 
             } else {
-              // ✅ Plain text with timepoints: use actual TTS timing data
-              
+              // Plain text mode
               const timepoints = [];
               const totalDuration = 1000 * audio.duration;
               const wordCount = line.text.length;
               
               if (data.timepoints && data.timepoints.length > 0) {
-                // Use actual timepoints from TTS API
                 for (let i = 0; i < wordCount; i++) {
                   const currentTime = i < data.timepoints.length ? 
                     data.timepoints[i].timeSeconds * 1000 : 
@@ -3213,18 +3184,16 @@ class TalkingHead {
                     totalDuration;
                   
                   let duration = nextTime - currentTime;
-                  if (duration > 150) duration -= 150; // Trim leading space like SSML version
+                  if (duration > 150) duration -= 150;
                   
                   timepoints.push({
                     mark: i,
                     time: currentTime,
-                    duration: Math.max(duration, 50) // Ensure minimum duration
+                    duration: Math.max(duration, 50)
                   });
                 }
               } else {
-                // Fallback: if no timepoints available, use averaging
                 const avgDuration = totalDuration / wordCount;
-                
                 for (let i = 0; i < wordCount; i++) {
                   timepoints.push({
                     mark: i,
@@ -3234,7 +3203,6 @@ class TalkingHead {
                 }
               }
               
-              // Apply timing to animations (same logic as SSML version)
               line.anim.forEach(x => {
                 const timepoint = timepoints[x.mark];
                 if (timepoint) {
@@ -3253,7 +3221,7 @@ class TalkingHead {
 
           } else {
             console.warn('TTS response missing audioContent or failed');
-            this.startSpeaking(true); // fallback
+            this.startSpeaking(true);
           }
 
         } catch (err) {
@@ -3261,7 +3229,6 @@ class TalkingHead {
           this.startSpeaking(true);
         }
       } else if ( line.anim ) {
-        // Only subtitles
         this.onSubtitles = line.onSubtitles || null;
         this.resetLips();
         if ( line.mood ) this.setMood( line.mood );
