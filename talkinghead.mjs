@@ -3083,23 +3083,27 @@ class TalkingHead {
             const plainText = line.text.map(x => x.word).join(' ');
             inputData = { text: plainText };
           } else {
-            let ssml = "<speak>";
-            line.text.forEach( (x,i) => {
-              // Add mark
-              if (i > 0) {
-                ssml += " <mark name='" + x.mark + "'/>";
-              }
+            // Build plain sentence text first
+            let rawSentence = line.text.map(x => x.word).join(' ');
 
-              // Add word
-              ssml += x.word.replaceAll('&','&amp;')
+            // 🔧 Add SSML tags for better number pronunciation
+            rawSentence = this.preprocessNumbersForSSML(rawSentence);
+
+            // Build SSML structure with marks and escapes
+            let ssml = "<speak>";
+            line.text.forEach((x, i) => {
+              if (i > 0) ssml += " <mark name='" + x.mark + "'/>";
+              let safeWord = x.word
+                .replaceAll('&','&amp;')
                 .replaceAll('<','&lt;')
                 .replaceAll('>','&gt;')
                 .replaceAll('"','&quot;')
                 .replaceAll('\'','&apos;')
                 .replace(/^\p{Dash_Punctuation}$/ug,'<break time="750ms"/>');
 
+              ssml += safeWord + " ";
             });
-            ssml += "</speak>";
+            ssml = `<speak>${rawSentence}</speak>`;
             inputData = { ssml };
           }
 
@@ -4372,6 +4376,46 @@ class TalkingHead {
         this.poseTarget.props[x.link+".quaternion"].d = d;
       });
     }
+  }
+
+  /**
+  * Preprocess text to handle numbers for better TTS pronunciation
+  * @param {string} text Input text
+  * @return {string} Processed text with SSML
+  */
+  preprocessNumbersForSSML(text) {
+    // Detect and protect phone numbers (like +91 9876543210 or (123) 456-7890)
+    const phonePattern = /\b(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g;
+    const phonePlaceholders = [];
+    text = text.replace(phonePattern, (match) => {
+      const placeholder = `__PHONE_${phonePlaceholders.length}__`;
+      phonePlaceholders.push(match);
+      return placeholder;
+    });
+
+    // Wrap standalone numbers
+    text = text.replace(/\b(\d+)\b/g, (match) => {
+      const num = parseInt(match);
+
+      // Numbers like 100, 1000, etc.
+      if (num >= 100 && num % 100 === 0) {
+        return `<say-as interpret-as="cardinal">${match}</say-as>`;
+      }
+
+      // All other numbers (1, 10, 25, 45, etc.) — use cardinal too
+      if (num >= 0) {
+        return `<say-as interpret-as="cardinal">${match}</say-as>`;
+      }
+
+      return match;
+    });
+
+    // Restore phone numbers
+    phonePlaceholders.forEach((phone, index) => {
+      text = text.replace(`__PHONE_${index}__`, phone);
+    });
+
+    return text;
   }
 
 }
