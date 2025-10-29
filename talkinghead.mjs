@@ -4384,33 +4384,44 @@ class TalkingHead {
   * @return {string} Processed text with SSML
   */
   preprocessNumbersForSSML(text) {
-    // Detect and protect phone numbers (like +91 9876543210 or (123) 456-7890)
-    const phonePattern = /\b(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g;
+    // Step 1: Protect phone numbers and other digit sequences that should be read digit-by-digit
     const phonePlaceholders = [];
+    const phonePattern = /\b(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4,}\b|\b\d{10,}\b/g;
     text = text.replace(phonePattern, (match) => {
       const placeholder = `__PHONE_${phonePlaceholders.length}__`;
       phonePlaceholders.push(match);
       return placeholder;
     });
 
-    // Wrap standalone numbers
+    // Step 2: Process remaining numbers
     text = text.replace(/\b(\d+)\b/g, (match) => {
-      const num = parseInt(match);
+      const num = parseInt(match, 10);
 
-      // Numbers like 100, 1000, etc.
-      if (num >= 100 && num % 100 === 0) {
+      // Single or double-digit numbers: leave as-is (TTS handles these well)
+      if (num < 100) {
+        return match;
+      }
+
+      // Round hundreds (100, 200, 1000, etc.)
+      if (num % 100 === 0 || num % 1000 === 0) {
+        // Use cardinal for proper pronunciation
         return `<say-as interpret-as="cardinal">${match}</say-as>`;
       }
 
-      // All other numbers (1, 10, 25, 45, etc.) — use cardinal too
-      if (num >= 0) {
+      // Numbers 100-999 that aren't round (like 764)
+      if (num >= 100 && num < 1000) {
+        return `<say-as interpret-as="cardinal">${match}</say-as>`;
+      }
+
+      // Large numbers (1000+)
+      if (num >= 1000) {
         return `<say-as interpret-as="cardinal">${match}</say-as>`;
       }
 
       return match;
     });
 
-    // Restore phone numbers
+    // Step 3: Restore phone numbers (keep as plain digits)
     phonePlaceholders.forEach((phone, index) => {
       text = text.replace(`__PHONE_${index}__`, phone);
     });
