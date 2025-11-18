@@ -2591,6 +2591,13 @@ class TalkingHead {
     const isSsmlEnabled = opt.ssml !== false;
     const voiceModal = opt.voiceModal || '';
     const chunkInfo = opt.chunkInfo || {};
+    if (isSsmlEnabled && s && typeof s === 'string') {
+      s = this.processNumbersForTTS(s, true);
+      // Wrap in speak tags if not already wrapped
+      if (!s.trim().startsWith('<speak>') && !s.trim().startsWith('<?xml')) {
+        s = `<speak>${s}</speak>`;
+      }
+    }
     // Classifiers
     const dividersSentence = /[!\.\?\n\p{Extended_Pictographic}]/ug;
     const dividersWord = /[ ]/ug;
@@ -3050,15 +3057,24 @@ class TalkingHead {
       const chunkInfo = line.chunkInfo || {};
 
       if ( line.emoji ) {
+
+        // Look at the camera
         this.lookAtCamera(500);
+
+        // Only emoji
         let duration = line.emoji.dt.reduce((a,b) => a+b,0);
         this.animQueue.push( this.animFactory( line.emoji ) );
         setTimeout( this.startSpeaking.bind(this), duration, true );
       } else if ( line.break ) {
+        // Break
         setTimeout( this.startSpeaking.bind(this), line.break, true );
       } else if ( line.audio ) {
+
+        // Look at the camera
         this.lookAtCamera(500);
         this.speakWithHands();
+
+        // Make a playlist
         this.audioPlaylist.push({ anim: line.anim, audio: line.audio });
         this.onSubtitles = line.onSubtitles || null;
         this.resetLips();
@@ -3074,14 +3090,24 @@ class TalkingHead {
             const plainText = line.text.map(x => x.word).join(' ');
             inputData = { text: plainText };
           } else {
-            // Build plain sentence text first
-            let rawSentence = line.text.map(x => x.word).join(' ');
+            let ssml = "<speak>";
+            line.text.forEach( (x,i) => {
+              // Add mark
+              if (i > 0) {
+                ssml += " <mark name='" + x.mark + "'/>";
+              }
 
-            // 🔧 Preprocess numbers for SSML
-            rawSentence = this.preprocessNumbersForSSML(rawSentence);
+              // Add word
+              ssml += x.word.replaceAll('&','&amp;')
+                .replaceAll('<','&lt;')
+                .replaceAll('>','&gt;')
+                .replaceAll('"','&quot;')
+                .replaceAll('\'','&apos;')
+                .replace(/^\p{Dash_Punctuation}$/ug,'<break time="750ms"/>');
 
-            // Now wrap in <speak> tags - DON'T rebuild with marks, just use the preprocessed text
-            inputData = { ssml: `<speak>${rawSentence}</speak>` };
+            });
+            ssml += "</speak>";
+            inputData = { ssml };
           }
 
           const o = {
@@ -3120,14 +3146,17 @@ class TalkingHead {
             const audio = await this.audioCtx.decodeAudioData(buf);
             this.speakWithHands();
 
+            // 👇 Reuse old timing logic only if SSML mode
             if (isSsmlEnabled) {
+              // ✅ Full lipsync logic using SSML + marks + timepoints
+
               // Workaround for Google TTS not providing all timepoints
               const times = [0];
               let markIndex = 0;
               line.text.forEach((x, i) => {
                 if (i > 0) {
                   let ms = times[times.length - 1];
-                  if (data.timepoints && data.timepoints[markIndex]) {
+                  if (data.timepoints[markIndex]) {
                     ms = data.timepoints[markIndex].timeSeconds * 1000;
                     if (data.timepoints[markIndex].markName === "" + x.mark) {
                       markIndex++;
@@ -3142,7 +3171,7 @@ class TalkingHead {
               times.forEach((x, i) => {
                 if (i > 0) {
                   let prevDuration = x - times[i - 1];
-                  if ( prevDuration > 150 ) prevDuration -= 150;
+                if ( prevDuration > 150 ) prevDuration -= 150; // Trim out leading space
                   timepoints[i - 1].duration = prevDuration;
                   timepoints.push({ mark: i, time: x });
                 }
@@ -3161,6 +3190,7 @@ class TalkingHead {
                 }
               });
 
+              // Add to the playlist
               this.audioPlaylist.push({ anim: line.anim, audio: audio });
               this.onSubtitles = line.onSubtitles || null;
               this.resetLips();
@@ -3168,12 +3198,14 @@ class TalkingHead {
               this.playAudio();
 
             } else {
-              // Plain text mode
+              // ✅ Plain text with timepoints: use actual TTS timing data
+              
               const timepoints = [];
               const totalDuration = 1000 * audio.duration;
               const wordCount = line.text.length;
               
               if (data.timepoints && data.timepoints.length > 0) {
+                // Use actual timepoints from TTS API
                 for (let i = 0; i < wordCount; i++) {
                   const currentTime = i < data.timepoints.length ? 
                     data.timepoints[i].timeSeconds * 1000 : 
@@ -3184,16 +3216,18 @@ class TalkingHead {
                     totalDuration;
                   
                   let duration = nextTime - currentTime;
-                  if (duration > 150) duration -= 150;
+                  if (duration > 150) duration -= 150; // Trim leading space like SSML version
                   
                   timepoints.push({
                     mark: i,
                     time: currentTime,
-                    duration: Math.max(duration, 50)
+                    duration: Math.max(duration, 50) // Ensure minimum duration
                   });
                 }
               } else {
+                // Fallback: if no timepoints available, use averaging
                 const avgDuration = totalDuration / wordCount;
+                
                 for (let i = 0; i < wordCount; i++) {
                   timepoints.push({
                     mark: i,
@@ -3203,6 +3237,7 @@ class TalkingHead {
                 }
               }
               
+              // Apply timing to animations (same logic as SSML version)
               line.anim.forEach(x => {
                 const timepoint = timepoints[x.mark];
                 if (timepoint) {
@@ -3221,7 +3256,7 @@ class TalkingHead {
 
           } else {
             console.warn('TTS response missing audioContent or failed');
-            this.startSpeaking(true);
+            this.startSpeaking(true); // fallback
           }
 
         } catch (err) {
@@ -3229,6 +3264,7 @@ class TalkingHead {
           this.startSpeaking(true);
         }
       } else if ( line.anim ) {
+        // Only subtitles
         this.onSubtitles = line.onSubtitles || null;
         this.resetLips();
         if ( line.mood ) this.setMood( line.mood );
@@ -4344,58 +4380,66 @@ class TalkingHead {
       });
     }
   }
-
   /**
-  * Preprocess text to handle numbers for better TTS pronunciation
-  * @param {string} text Input text
-  * @return {string} Processed text with SSML
-  */
-  preprocessNumbersForSSML(text) {
-    // Step 1: Protect phone numbers and other digit sequences that should be read digit-by-digit
-    const phonePlaceholders = [];
-    const phonePattern = /\b(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4,}\b|\b\d{10,}\b/g;
-    text = text.replace(phonePattern, (match) => {
-      const placeholder = `__PHONE_${phonePlaceholders.length}__`;
-      phonePlaceholders.push(match);
-      return placeholder;
-    });
-
-    // Step 2: Process remaining numbers
-    text = text.replace(/\b(\d+)\b/g, (match) => {
-      const num = parseInt(match, 10);
-
-      // Single or double-digit numbers: leave as-is (TTS handles these well)
-      if (num < 100) {
-        return match;
-      }
-
-      // Round hundreds (100, 200, 1000, etc.)
-      if (num % 100 === 0 || num % 1000 === 0) {
-        // Use cardinal for proper pronunciation
-        return `<say-as interpret-as="cardinal">${match}</say-as>`;
-      }
-
-      // Numbers 100-999 that aren't round (like 764)
-      if (num >= 100 && num < 1000) {
-        return `<say-as interpret-as="cardinal">${match}</say-as>`;
-      }
-
-      // Large numbers (1000+)
-      if (num >= 1000) {
-        return `<say-as interpret-as="cardinal">${match}</say-as>`;
-      }
-
-      return match;
-    });
-
-    // Step 3: Restore phone numbers (keep as plain digits)
-    phonePlaceholders.forEach((phone, index) => {
-      text = text.replace(`__PHONE_${index}__`, phone);
-    });
-
-    return text;
+   * Detect if a number should be read as digits (like phone numbers)
+   */
+  isPhoneNumberContext(numStr, context) {
+    const phoneKeywords = /\b(phone|call|dial|number|contact|mobile|cell|telephone)\b/i;
+    const hasPhoneKeyword = phoneKeywords.test(context);
+    
+    const phonePattern = /[\d\s\-\(\)\.]{7,}/;
+    const looksLikePhone = phonePattern.test(numStr);
+    
+    const digitsOnly = numStr.replace(/\D/g, '');
+    const isLongNumber = digitsOnly.length >= 7;
+    
+    return hasPhoneKeyword || (looksLikePhone && isLongNumber);
   }
 
+  /**
+   * Process numbers in text for better TTS pronunciation
+   */
+  processNumbersForTTS(text, useSSML = false) {
+    if (!text || !useSSML) return text;
+    
+    const numberPattern = /\b(\d{1,3}(,\d{3})*(\.\d+)?|\d+(\.\d+)?)\b/g;
+    
+    return text.replace(numberPattern, (match, ...args) => {
+      const fullString = args[args.length - 1];
+      const index = args[args.length - 2];
+      const contextStart = Math.max(0, index - 50);
+      const contextEnd = Math.min(fullString.length, index + match.length + 50);
+      const context = fullString.substring(contextStart, contextEnd);
+      
+      const cleanNumber = match.replace(/,/g, '');
+      
+      if (this.isPhoneNumberContext(match, context)) {
+        return match;
+      }
+      
+      if (cleanNumber.includes('.')) {
+        return `<say-as interpret-as="cardinal">${match}</say-as>`;
+      }
+      
+      const numValue = parseInt(cleanNumber);
+      if (cleanNumber.length === 4 && numValue >= 1000 && numValue <= 2999) {
+        const yearContext = /\b(year|in|since|until|born|died|century)\b/i;
+        if (yearContext.test(context)) {
+          return `<say-as interpret-as="date" format="y">${match}</say-as>`;
+        }
+      }
+      
+      if (/\b\d+(st|nd|rd|th)\b/i.test(match)) {
+        return `<say-as interpret-as="ordinal">${cleanNumber}</say-as>`;
+      }
+      
+      if (numValue >= 10) {
+        return `<say-as interpret-as="cardinal">${match}</say-as>`;
+      }
+      
+      return match;
+    });
+  }
 }
 
 export { TalkingHead };
