@@ -2579,25 +2579,17 @@ class TalkingHead {
   }
 
 
-  /**
-  * Add text to the speech queue.
-  * @param {string} s Text.
-  * @param {Options} [opt=null] Text-specific options for lipsync/TTS language, voice, rate and pitch, mood and mute
-  * @param {subtitlesfn} [onsubtitles=null] Callback when a subtitle is written
-  * @param {number[][]} [excludes=null] Array of [start, end] index arrays to not speak
-  */
-  speakText(s, opt = null, onsubtitles = null, excludes = null ) {
+speakText(s, opt = null, onsubtitles = null, excludes = null ) {
     opt = opt || {};
     const isSsmlEnabled = opt.ssml !== false;
     const voiceModal = opt.voiceModal || '';
     const chunkInfo = opt.chunkInfo || {};
-    if (isSsmlEnabled && s && typeof s === 'string') {
-      s = this.processNumbersForTTS(s, true);
-      // Wrap in speak tags if not already wrapped
-      if (!s.trim().startsWith('<speak>') && !s.trim().startsWith('<?xml')) {
-        s = `<speak>${s}</speak>`;
-      }
-    }
+    
+    // DON'T process here anymore - we'll do it per word
+    // if (isSsmlEnabled && s && typeof s === 'string') {
+    //   s = this.processNumbersForTTS(s, true);
+    // }
+    
     // Classifiers
     const dividersSentence = /[!\.\?\n\p{Extended_Pictographic}]/ug;
     const dividersWord = /[ ]/ug;
@@ -2611,6 +2603,7 @@ class TalkingHead {
     let ttsSentence = []; // Text-to-speech sentence
     let lipsyncAnim = []; // Lip-sync animation sequence
     const letters = [...s];
+    
     for( let i=0; i<letters.length; i++ ) {
       const isLast = i === (letters.length-1);
       const isSpeakable = letters[i].match(speakables);
@@ -2647,9 +2640,17 @@ class TalkingHead {
         if ( textWord.length ) {
           textWord = this.lipsyncPreProcessText(textWord, lipsyncLang);
           if ( textWord.length ) {
+            // Process numbers in this word if SSML is enabled
+            let processedWord = textWord;
+            if (isSsmlEnabled) {
+              // Get context: previous words from ttsSentence
+              const contextWords = ttsSentence.slice(-5).map(w => w.word).join(' ');
+              processedWord = this.processWordForTTS(textWord, contextWords);
+            }
+            
             ttsSentence.push( {
               mark: markId,
-              word: textWord
+              word: processedWord
             });
           }
         }
@@ -2673,7 +2674,6 @@ class TalkingHead {
           if ( val && val.visemes && val.visemes.length ) {
             const d = val.times[ val.visemes.length-1 ] + val.durations[ val.visemes.length-1 ];
             for( let j=0; j<val.visemes.length; j++ ) {
-              const o =
               lipsyncAnim.push( {
                 mark: markId,
                 template: { name: 'viseme' },
@@ -2726,9 +2726,7 @@ class TalkingHead {
         }
 
         this.speechQueue.push({ break: 100, isSsmlEnabled, voiceModal, chunkInfo });
-
       }
-
     }
 
     this.speechQueue.push({ break: 1000, isSsmlEnabled, voiceModal, chunkInfo });
@@ -4381,7 +4379,62 @@ class TalkingHead {
     }
   }
   /**
-   * Detect if a number should be read as digits (like phone numbers)
+   * Process a single word for TTS, checking if it contains numbers
+   */
+  processWordForTTS(word, context = '') {
+    if (!word) return word;
+    
+    // Pattern to match numbers in a word
+    const numberPattern = /\b(\d{1,3}(,\d{3})*(\.\d+)?|\d+(\.\d+)?)\b/g;
+    
+    // Check if this word contains a number
+    if (!numberPattern.test(word)) {
+      return word;
+    }
+    
+    // Reset the regex
+    numberPattern.lastIndex = 0;
+    
+    return word.replace(numberPattern, (match) => {
+      const cleanNumber = match.replace(/,/g, '');
+      
+      // Check phone number context
+      if (this.isPhoneNumberContext(match, context + ' ' + word)) {
+        return match;
+      }
+      
+      // Handle decimal numbers
+      if (cleanNumber.includes('.')) {
+        return `<say-as interpret-as="cardinal">${match}</say-as>`;
+      }
+      
+      const numValue = parseInt(cleanNumber);
+      
+      // Handle years (4-digit numbers 1000-2999)
+      if (cleanNumber.length === 4 && numValue >= 1000 && numValue <= 2999) {
+        const yearContext = /\b(year|in|since|until|born|died|century|founded|established)\b/i;
+        if (yearContext.test(context)) {
+          return `<say-as interpret-as="date" format="y">${match}</say-as>`;
+        }
+      }
+      
+      // Handle ordinal indicators
+      if (/\d+(st|nd|rd|th)$/i.test(word)) {
+        return `<say-as interpret-as="ordinal">${cleanNumber}</say-as>`;
+      }
+      
+      // Handle larger numbers (10+) - pronounce as full numbers
+      if (numValue >= 10) {
+        return `<say-as interpret-as="cardinal">${match}</say-as>`;
+      }
+      
+      // Small numbers (0-9) - leave as is
+      return match;
+    });
+  }
+
+  /**
+   * Check if a number appears in a phone number context
    */
   isPhoneNumberContext(numStr, context) {
     const phoneKeywords = /\b(phone|call|dial|number|contact|mobile|cell|telephone)\b/i;
@@ -4397,48 +4450,11 @@ class TalkingHead {
   }
 
   /**
-   * Process numbers in text for better TTS pronunciation
+   * DEPRECATED - kept for compatibility but not used
+   * Use processWordForTTS instead
    */
   processNumbersForTTS(text, useSSML = false) {
-    if (!text || !useSSML) return text;
-    
-    const numberPattern = /\b(\d{1,3}(,\d{3})*(\.\d+)?|\d+(\.\d+)?)\b/g;
-    
-    return text.replace(numberPattern, (match, ...args) => {
-      const fullString = args[args.length - 1];
-      const index = args[args.length - 2];
-      const contextStart = Math.max(0, index - 50);
-      const contextEnd = Math.min(fullString.length, index + match.length + 50);
-      const context = fullString.substring(contextStart, contextEnd);
-      
-      const cleanNumber = match.replace(/,/g, '');
-      
-      if (this.isPhoneNumberContext(match, context)) {
-        return match;
-      }
-      
-      if (cleanNumber.includes('.')) {
-        return `<say-as interpret-as="cardinal">${match}</say-as>`;
-      }
-      
-      const numValue = parseInt(cleanNumber);
-      if (cleanNumber.length === 4 && numValue >= 1000 && numValue <= 2999) {
-        const yearContext = /\b(year|in|since|until|born|died|century)\b/i;
-        if (yearContext.test(context)) {
-          return `<say-as interpret-as="date" format="y">${match}</say-as>`;
-        }
-      }
-      
-      if (/\b\d+(st|nd|rd|th)\b/i.test(match)) {
-        return `<say-as interpret-as="ordinal">${cleanNumber}</say-as>`;
-      }
-      
-      if (numValue >= 10) {
-        return `<say-as interpret-as="cardinal">${match}</say-as>`;
-      }
-      
-      return match;
-    });
+    return text; // No longer used
   }
 }
 
